@@ -183,9 +183,15 @@
         </p>
 
         <div class="button-group">
-          <a href="http://{{ base_url }}/login" class="cta-button"
+          {% if role == 'TEACHER' %}
+          <a href="https://mentor.assignease.io/login" class="cta-button"
             >Log In to Your Account</a
           >
+          {% else %}
+          <a href="https://learn.assignease.io/login" class="cta-button"
+            >Log In to Your Account</a
+          >
+          {% endif %}
         </div>
       </div>
 
@@ -196,11 +202,19 @@
           AssignEase.
         </p>
         <p>
+          {% if role == 'TEACHER' %}
           <a
-            href="http://{{ base_url }}/settings"
+            href="https://mentor.assignease.io/settings"
             style="color: #11998e; text-decoration: none"
             >Manage Email Preferences</a
           >
+          {% else %}
+          <a
+            href="https://learn.assignease.io/settings"
+            style="color: #11998e; text-decoration: none"
+            >Manage Email Preferences</a
+          >
+          {% endif %}
         </p>
       </div>
     </div>
