@@ -103,17 +103,15 @@ WSGI_APPLICATION = 'AssignEaseApi.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'assigneasedb',  # The name of your database
-        'USER': 'root',        # The MySQL user
-        'PASSWORD': 'raunak2003',       # The MySQL user's password
-        'HOST': 'localhost',          # Set to 'localhost' or your DB server's IP
-        'PORT': '3306',               # Default MySQL port
+        'NAME': 'api_assignease',
+        'USER': 'api_assignease',
+        'PASSWORD': 'raunak2003',
+        'HOST': '31.97.62.63',
+        'PORT': '3306',
     }
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/4.0/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -152,3 +150,41 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Media files (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+GITHUB_CLIENT_ID = 'your_github_client_id_here'
+GITHUB_CLIENT_SECRET = 'your_github_client_secret_here'
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'mail.assignease.io'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+EMAIL_HOST_USER = 'noreply@assignease.io'
+EMAIL_HOST_PASSWORD = 'noreply'
+DEFAULT_FROM_EMAIL = 'AssignEase Team <noreply@assignease.io>'
+EMAIL_TIMEOUT = 20
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Alternative: Use Redis for production (requires Redis server running)
+# To use Redis, uncomment below and comment out the in-memory cache above
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django_redis.cache.RedisCache',
+#         'LOCATION': 'redis://127.0.0.1:6379/1',
+#         'OPTIONS': {
+#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+#         }
+#     }
+# }

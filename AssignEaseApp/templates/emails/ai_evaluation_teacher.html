@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Evaluation Report - Teacher</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #f9f9f9;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 700px;
+        margin: 20px auto;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+      }
+      .header p {
+        margin: 5px 0 0 0;
+        opacity: 0.9;
+      }
+      .content {
+        padding: 30px;
+      }
+      .greeting {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: #333;
+      }
+      .section {
+        margin-bottom: 25px;
+      }
+      .section-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #667eea;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+        letter-spacing: 1px;
+      }
+      .info-box {
+        background-color: #f5f7ff;
+        border-left: 4px solid #667eea;
+        padding: 15px;
+        margin-bottom: 15px;
+        border-radius: 4px;
+      }
+      .info-item {
+        margin-bottom: 12px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .info-label {
+        font-weight: 600;
+        color: #667eea;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex: 1;
+      }
+      .info-value {
+        color: #333;
+        flex: 1;
+        text-align: right;
+      }
+      .score-display {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        font-size: 20px;
+        font-weight: 600;
+        min-width: 100px;
+        text-align: center;
+        margin-top: 10px;
+      }
+      .student-card {
+        background-color: #f9f9f9;
+        border: 2px solid #667eea;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 15px;
+      }
+      .student-name {
+        font-size: 16px;
+        font-weight: 600;
+        color: #667eea;
+      }
+      .feedback-box {
+        background-color: #f9f9f9;
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #e0e0e0;
+        margin-top: 15px;
+        line-height: 1.8;
+      }
+      .mistake-badge {
+        display: inline-block;
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-top: 10px;
+      }
+      .button-group {
+        text-align: center;
+        margin-top: 30px;
+      }
+      .cta-button {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 35px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 600;
+        transition: transform 0.2s;
+        margin-right: 10px;
+      }
+      .cta-button:hover {
+        transform: translateY(-2px);
+      }
+      .secondary-button {
+        display: inline-block;
+        background-color: #e0e0e0;
+        color: #333;
+        padding: 12px 35px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      .footer {
+        background-color: #f5f5f5;
+        padding: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #999;
+        border-top: 1px solid #e0e0e0;
+      }
+      .divider {
+        height: 1px;
+        background-color: #e0e0e0;
+        margin: 25px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📊 AI Evaluation Report</h1>
+        <p>An assignment has been evaluated by the AI system</p>
+      </div>
+
+      <div class="content">
+        <div class="greeting">Hi {{ teacher_name }},</div>
+
+        <p>
+          A student's assignment submission has been automatically evaluated by
+          our AI system. Here are the details:
+        </p>
+
+        <div class="section">
+          <div class="section-title">Student & Assignment</div>
+          <div class="student-card">
+            <div class="student-name">{{ student_name }}</div>
+            <div style="color: #666; font-size: 14px; margin-top: 5px">
+              Submitted: {{ completed_at|date:"F j, Y H:i" }}
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="info-item">
+              <div class="info-label">Assignment</div>
+              <div class="info-value">{{ assignment_title }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Question</div>
+              <div class="info-value">{{ question_title }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">AI Evaluation Results</div>
+          <div class="info-box">
+            <div class="info-item">
+              <div class="info-label">AI Score</div>
+              <div class="info-value">
+                <div class="score-display">{{ ai_score|default:"N/A" }}</div>
+              </div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Confidence</div>
+              <div class="info-value">{{ confidence|default:0 }}%</div>
+            </div>
+            {% if mistake_type %}
+            <div class="info-item">
+              <div class="info-label">Detected Issue</div>
+              <div class="info-value">
+                <div class="mistake-badge">{{ mistake_type }}</div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if feedback %}
+        <div class="section">
+          <div class="section-title">AI Feedback</div>
+          <div class="feedback-box">{{ feedback }}</div>
+        </div>
+        {% endif %}
+
+        <div class="divider"></div>
+
+        <p style="color: #666; font-size: 14px">
+          💡 This AI evaluation is meant to assist you in reviewing student
+          work. You can use this report as a starting point and provide your own
+          feedback to the student. Remember to review the actual submission
+          before finalizing grades.
+        </p>
+
+        <div class="button-group">
+          <a
+            href="http://{{ base_url }}/dashboard/submission/{{ submission_id }}"
+            class="cta-button"
+            >Review Submission</a
+          >
+          <a href="http://{{ base_url }}/dashboard" class="secondary-button"
+            >Go to Dashboard</a
+          >
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>© 2026 AssignEase. All rights reserved.</p>
+        <p>
+          You're receiving this email because an assignment was evaluated on
+          AssignEase.
+        </p>
+        <p>
+          <a
+            href="http://{{ base_url }}/settings"
+            style="color: #667eea; text-decoration: none"
+            >Manage Email Preferences</a
+          >
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
