@@ -94,9 +94,8 @@ class EmailService:
         
         # Get all students in the class
         class_students = ClassStudent.objects.filter(class_assigned=assignment.class_assigned)
-        recipients = [student.student.email for student in class_students]
         
-        if not recipients:
+        if not class_students.exists():
             logger.info(f"No students found in class {assignment.class_assigned.class_name}")
             return False
 
@@ -105,22 +104,36 @@ class EmailService:
         # Get teacher's profile name
         teacher_name = assignment.teacher.profile.name if hasattr(assignment.teacher, 'profile') and assignment.teacher.profile.name else assignment.teacher.first_name or assignment.teacher.username
         
-        context = {
-            'assignment_title': assignment.title,
-            'class_name': assignment.class_assigned.class_name,
-            'due_date': assignment.due_date,
-            'description': assignment.description,
-            'teacher_name': teacher_name,
-            'created_at': assignment.created_at,
-            'base_url': settings.ALLOWED_HOSTS[0] if settings.ALLOWED_HOSTS else 'localhost',
-        }
+        # Send email individually to each student
+        all_sent = True
+        for class_student in class_students:
+            student = class_student.student
+            student_name = student.profile.name if hasattr(student, 'profile') and student.profile.name else student.first_name or student.username
+            
+            context = {
+                'student_name': student_name,
+                'assignment_title': assignment.title,
+                'class_name': assignment.class_assigned.class_name,
+                'due_date': assignment.due_date,
+                'description': assignment.description,
+                'teacher_name': teacher_name,
+                'created_at': assignment.created_at,
+                'base_url': settings.ALLOWED_HOSTS[0] if settings.ALLOWED_HOSTS else 'localhost',
+            }
+            
+            # Send email to individual student
+            email_sent = EmailService.send_email(
+                subject=subject,
+                recipients=[student.email],
+                template_name='emails/assignment_created_student.html',
+                context=context
+            )
+            
+            if not email_sent:
+                all_sent = False
+                logger.warning(f"Failed to send assignment email to student {student.email}")
         
-        return EmailService.send_email(
-            subject=subject,
-            recipients=recipients,
-            template_name='emails/assignment_created_student.html',
-            context=context
-        )
+        return all_sent
 
     @staticmethod
     def send_student_registration_confirmation(user, role) -> bool:
