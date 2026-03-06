@@ -658,6 +658,8 @@ class DatabaseQuestionSerializer(serializers.ModelSerializer):
 class DatabaseSubmissionSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='student.username', read_only=True)
     student_email = serializers.CharField(source='student.email', read_only=True)
+    student_enrollment = serializers.CharField(source='student.profile.enrollment_number', read_only=True, allow_null=True)
+    student_display_name = serializers.CharField(source='student.profile.name', read_only=True, allow_null=True)
     question_text = serializers.CharField(source='question.question_text', read_only=True)
     assignment_title = serializers.CharField(source='assignment.title', read_only=True)
     total_marks = serializers.FloatField(source='question.total_marks', read_only=True)
