@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet
+from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet, DatabaseSchemaViewSet, DatabaseQuestionViewSet, DatabaseSubmissionViewSet, TestDatabaseQueryView, TestDatabaseSchemaView, TestDatabaseQueryWithSchemaView, get_database_submissions_by_student
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .oauth_views import GoogleOAuthView, GitHubOAuthView
 from .otp_views import SendOTPView, VerifyOTPView, ResetPasswordView
@@ -20,6 +20,9 @@ router.register(r'assignmentattachments', AssignmentAttachmentViewSet)
 router.register(r'submissions', SubmissionViewSet)
 router.register(r'noncodingsubmissions', NonCodingSubmissionViewSet)
 router.register(r'teacherfeedback', TeacherFeedbackViewSet)
+router.register(r'databaseschemas', DatabaseSchemaViewSet)
+router.register(r'databasequestions', DatabaseQuestionViewSet)
+router.register(r'databasesubmissions', DatabaseSubmissionViewSet)
   
 urlpatterns = [
     path('', include(router.urls)),
@@ -49,5 +52,11 @@ urlpatterns = [
     path("run-testcases/", RunTestCasesView.as_view(), name="run-testcases"),
     path("evaluate-submission/", EvaluateSubmissionView.as_view(), name="evaluate-submission"),
     path('ai-evaluations/', views.AIEvaluationListView.as_view(), name='ai-evaluation-list'),
-    path('ai-evaluations/<int:pk>/', views.AIEvaluationDetailView.as_view(), name='ai-evaluation-detail')
+    path('ai-evaluations/<int:pk>/', views.AIEvaluationDetailView.as_view(), name='ai-evaluation-detail'),
+    
+    # Database Assignment endpoints
+    path('test-database-query/', TestDatabaseQueryView.as_view(), name='test-database-query'),
+    path('test-database-schema/', TestDatabaseSchemaView.as_view(), name='test-database-schema'),
+    path('test-database-query-with-schema/', TestDatabaseQueryWithSchemaView.as_view(), name='test-database-query-with-schema'),
+    path('database-submissions/student/<int:student_id>/assignment/<int:assignment_id>/', get_database_submissions_by_student, name='database-submissions-by-student'),
 ]

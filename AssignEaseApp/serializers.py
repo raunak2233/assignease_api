@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, Contact, AssignmentQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, AIEvaluation
+from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, Contact, AssignmentQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.exceptions import ValidationError
@@ -276,7 +276,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if not student_id:
             return False  
         
-        return Submission.objects.filter(assignment=obj, student_id=student_id).exists()
+        # Check for any type of submission: coding, non-coding, or database
+        coding_submitted = Submission.objects.filter(assignment=obj, student_id=student_id).exists()
+        non_coding_submitted = NonCodingSubmission.objects.filter(assignment=obj, student_id=student_id).exists()
+        database_submitted = DatabaseSubmission.objects.filter(assignment=obj, student_id=student_id).exists()
+        
+        return coding_submitted or non_coding_submitted or database_submitted
     
     def get_attachments(self, obj):
         request = self.context.get('request')
@@ -628,3 +633,41 @@ class AIEvaluationSerializer(serializers.ModelSerializer):
                     'email': obj.student.email,
                 }
         return None
+
+
+# Database Assignment Serializers
+
+class DatabaseSchemaSerializer(serializers.ModelSerializer):
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    
+    class Meta:
+        model = DatabaseSchema
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class DatabaseQuestionSerializer(serializers.ModelSerializer):
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    
+    class Meta:
+        model = DatabaseQuestion
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class DatabaseSubmissionSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='student.username', read_only=True)
+    student_email = serializers.CharField(source='student.email', read_only=True)
+    question_text = serializers.CharField(source='question.question_text', read_only=True)
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    total_marks = serializers.FloatField(source='question.total_marks', read_only=True)
+    final_marks = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = DatabaseSubmission
+        fields = '__all__'
+        read_only_fields = ['query_result', 'is_correct', 'execution_time', 'auto_marks', 'submitted_at', 'updated_at']
+    
+    def get_final_marks(self, obj):
+        """Return custom_marks if set, otherwise auto_marks"""
+        return obj.custom_marks if obj.custom_marks is not None else obj.auto_marks

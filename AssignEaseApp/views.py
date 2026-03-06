@@ -1,7 +1,7 @@
 from rest_framework import viewsets, generics
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import User, Profile, Class, Contact, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, Submission, TeacherFeedback, NonCodingSubmission, TestCase, AIEvaluation
-from .serializers import RegistrationSerializer, UserSerializer, ContactSerializer, ProfileSerializer, ClassSerializer, ClassStudentSerializer, ProgrammingLanguageSerializer, AssignmentSerializer, AssignmentQuestionSerializer, SubmissionSerializer, TeacherFeedbackSerializer, ClassStudentDetailSerializer, CustomTokenObtainPairSerializer, AssignmentAttachmentSerializer, NonCodingSubmissionSerializer, TestCaseSerializer, TestCaseResultSerializer, AIEvaluationSerializer
+from .models import User, Profile, Class, Contact, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, Submission, TeacherFeedback, NonCodingSubmission, TestCase, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
+from .serializers import RegistrationSerializer, UserSerializer, ContactSerializer, ProfileSerializer, ClassSerializer, ClassStudentSerializer, ProgrammingLanguageSerializer, AssignmentSerializer, AssignmentQuestionSerializer, SubmissionSerializer, TeacherFeedbackSerializer, ClassStudentDetailSerializer, CustomTokenObtainPairSerializer, AssignmentAttachmentSerializer, NonCodingSubmissionSerializer, TestCaseSerializer, TestCaseResultSerializer, AIEvaluationSerializer, DatabaseSchemaSerializer, DatabaseQuestionSerializer, DatabaseSubmissionSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
@@ -16,6 +16,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AssignmentAttachment
 from .piston_service import PistonService
 from .models import AssignmentQuestion, TestCase, TestCaseResult
+from .database_service import DatabaseService
 
 @api_view(['GET'])
 def get_student_assignments(request, student_id):
@@ -889,3 +890,301 @@ class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all().order_by('-created_at')
     serializer_class = ContactSerializer
     permission_classes = [AllowAny]
+
+
+# Database Assignment Views
+
+class DatabaseSchemaViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing database schemas"""
+    queryset = DatabaseSchema.objects.all()
+    serializer_class = DatabaseSchemaSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.profile.role == 'teacher':
+            # Teachers can only see schemas for their assignments
+            return DatabaseSchema.objects.filter(assignment__teacher=user)
+        else:
+            # Students can see schemas for assignments in their classes
+            student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
+            return DatabaseSchema.objects.filter(assignment__class_assigned__in=student_classes)
+
+
+class DatabaseQuestionViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing database questions"""
+    queryset = DatabaseQuestion.objects.all()
+    serializer_class = DatabaseQuestionSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.profile.role == 'teacher':
+            return DatabaseQuestion.objects.filter(assignment__teacher=user)
+        else:
+            student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
+            return DatabaseQuestion.objects.filter(assignment__class_assigned__in=student_classes)
+
+
+class DatabaseSubmissionViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing database submissions"""
+    queryset = DatabaseSubmission.objects.all()
+    serializer_class = DatabaseSubmissionSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.profile.role == 'teacher':
+            # Teachers can see all submissions for their assignments
+            return DatabaseSubmission.objects.filter(assignment__teacher=user)
+        else:
+            # Students can only see their own submissions
+            return DatabaseSubmission.objects.filter(student=user)
+    
+    def create(self, request, *args, **kwargs):
+        """Handle database submission with automatic validation"""
+        student = request.user
+        assignment_id = request.data.get('assignment')
+        question_id = request.data.get('question')
+        submitted_query = request.data.get('submitted_query')
+        
+        if not submitted_query or not submitted_query.strip():
+            return Response(
+                {'error': 'Query cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get assignment, question, and schema
+            assignment = Assignment.objects.get(id=assignment_id)
+            question = DatabaseQuestion.objects.get(id=question_id, assignment=assignment)
+            
+            try:
+                schema = DatabaseSchema.objects.get(assignment=assignment)
+            except DatabaseSchema.DoesNotExist:
+                return Response(
+                    {'error': 'Database schema not found for this assignment'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Execute and validate query based on question type
+            if question.question_type == 'ddl_dml':
+                # For DDL/DML questions, use verification query
+                if not question.verification_query:
+                    return Response(
+                        {'error': 'Verification query not configured for this question'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                result = DatabaseService.validate_ddl_dml_query(
+                    db_type=schema.db_type,
+                    schema_sql=schema.schema_sql,
+                    sample_data_sql=schema.sample_data_sql,
+                    student_query=submitted_query,
+                    verification_query=question.verification_query,
+                    expected_result=question.expected_result
+                )
+            else:
+                # For SELECT questions, direct validation
+                result = DatabaseService.execute_and_validate(
+                    db_type=schema.db_type,
+                    schema_sql=schema.schema_sql,
+                    sample_data_sql=schema.sample_data_sql,
+                    student_query=submitted_query,
+                    expected_result=question.expected_result,
+                    allow_write_operations=False
+                )
+            
+            # Calculate marks
+            auto_marks = question.total_marks if result['is_correct'] else 0.0
+            
+            # Create or update submission
+            submission, created = DatabaseSubmission.objects.update_or_create(
+                student=student,
+                assignment=assignment,
+                question=question,
+                defaults={
+                    'submitted_query': submitted_query,
+                    'query_result': result['query_result'],
+                    'is_correct': result['is_correct'],
+                    'execution_time': result['execution_time'],
+                    'error_message': result['error_message'],
+                    'auto_marks': auto_marks,
+                    'feedback': result['feedback'],
+                    'status': 'submitted'
+                }
+            )
+            
+            serializer = self.get_serializer(submission)
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+            )
+            
+        except Assignment.DoesNotExist:
+            return Response(
+                {'error': 'Assignment not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DatabaseQuestion.DoesNotExist:
+            return Response(
+                {'error': 'Question not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Submission failed: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class TestDatabaseQueryView(APIView):
+    """Test query without submitting (for students to practice)"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        assignment_id = request.data.get('assignment_id')
+        query = request.data.get('query')
+        
+        if not query or not query.strip():
+            return Response(
+                {'success': False, 'error': 'Query cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            assignment = Assignment.objects.get(id=assignment_id)
+            
+            try:
+                schema = DatabaseSchema.objects.get(assignment=assignment)
+            except DatabaseSchema.DoesNotExist:
+                return Response(
+                    {'success': False, 'error': 'Database schema not found for this assignment'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Execute query without validation (just show results)
+            with DatabaseService.get_db_connection(schema.db_type) as conn:
+                DatabaseService.setup_schema(conn, schema.schema_sql, schema.sample_data_sql)
+                result, exec_time = DatabaseService.execute_query(conn, query, schema.db_type)
+            
+            return Response({
+                'success': True,
+                'result': result,
+                'execution_time': exec_time,
+                'row_count': len(result)
+            })
+            
+        except Assignment.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Assignment not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class TestDatabaseSchemaView(APIView):
+    """Test database schema without requiring a saved assignment"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        db_type = request.data.get('db_type', 'sqlite')
+        schema_sql = request.data.get('schema_sql', '')
+        sample_data_sql = request.data.get('sample_data_sql', '')
+        
+        if not schema_sql or not schema_sql.strip():
+            return Response(
+                {'success': False, 'error': 'Schema SQL cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Test the schema by creating tables and inserting sample data
+            with DatabaseService.get_db_connection(db_type) as conn:
+                DatabaseService.setup_schema(conn, schema_sql, sample_data_sql)
+                
+                # If we get here, schema is valid
+                # Count how many tables were created
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
+                table_names = [table[0] for table in tables]
+                cursor.close()
+            
+            return Response({
+                'success': True,
+                'message': f'Schema is valid! Created {len(table_names)} table(s).',
+                'tables': table_names
+            })
+            
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class TestDatabaseQueryWithSchemaView(APIView):
+    """Test query with provided schema (for question creation before assignment is saved)"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        db_type = request.data.get('db_type', 'sqlite')
+        schema_sql = request.data.get('schema_sql', '')
+        sample_data_sql = request.data.get('sample_data_sql', '')
+        query = request.data.get('query', '')
+        allow_write = request.data.get('allow_write_operations', False)
+        
+        if not schema_sql or not schema_sql.strip():
+            return Response(
+                {'success': False, 'error': 'Schema SQL cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not query or not query.strip():
+            return Response(
+                {'success': False, 'error': 'Query cannot be empty'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Execute query against the provided schema
+            with DatabaseService.get_db_connection(db_type) as conn:
+                DatabaseService.setup_schema(conn, schema_sql, sample_data_sql)
+                result, exec_time = DatabaseService.execute_query(conn, query, db_type, allow_write)
+            
+            return Response({
+                'success': True,
+                'result': result,
+                'execution_time': exec_time,
+                'row_count': len(result) if result else 0
+            })
+            
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+@api_view(['GET'])
+def get_database_submissions_by_student(request, student_id, assignment_id):
+    """Get all database submissions for a student in a specific assignment"""
+    try:
+        submissions = DatabaseSubmission.objects.filter(
+            student_id=student_id,
+            assignment_id=assignment_id
+        ).order_by('question__order')
+        
+        serializer = DatabaseSubmissionSerializer(submissions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )

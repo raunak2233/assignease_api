@@ -96,6 +96,7 @@ class Assignment(models.Model):
     ASSIGNMENT_TYPE_CHOICES = [
         ('coding', 'Coding'),
         ('non_coding', 'Non-Coding'),
+        ('database', 'Database'),
     ]
     
     SUBMISSION_TYPE_CHOICES = [
@@ -320,3 +321,87 @@ class AIEvaluation(models.Model):
 
     def __str__(self):
         return f"AI Eval for Submission {self.submission_id}"
+
+
+# Database Assignment Models
+
+class DatabaseSchema(models.Model):
+    """Stores the database schema for database assignments"""
+    DB_TYPE_CHOICES = [
+        ('mysql', 'MySQL'),
+        ('postgresql', 'PostgreSQL'),
+        ('sqlite', 'SQLite'),
+    ]
+    
+    assignment = models.OneToOneField(Assignment, on_delete=models.CASCADE, related_name='database_schema')
+    db_type = models.CharField(max_length=20, choices=DB_TYPE_CHOICES, default='sqlite')
+    schema_sql = models.TextField(help_text="CREATE TABLE statements")
+    sample_data_sql = models.TextField(blank=True, help_text="INSERT statements for sample data")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Schema for {self.assignment.title} ({self.db_type})"
+
+
+class DatabaseQuestion(models.Model):
+    """Database-specific questions with expected results"""
+    
+    QUESTION_TYPE_CHOICES = [
+        ('select', 'SELECT Query (Read-only)'),
+        ('ddl_dml', 'DDL/DML Query (CREATE, INSERT, UPDATE, DELETE)'),
+    ]
+    
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='database_questions')
+    question_text = models.TextField()
+    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default='select')
+    expected_query = models.TextField(help_text="Teacher's solution query", blank=True)
+    verification_query = models.TextField(
+        help_text="SELECT query to verify DDL/DML results (only for ddl_dml type)",
+        blank=True,
+        null=True
+    )
+    expected_result = models.JSONField(help_text="Expected query result as JSON")
+    total_marks = models.FloatField(default=10.0)
+    order = models.IntegerField(default=0)
+    hints = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['order']
+    
+    def __str__(self):
+        return f"DB Question {self.id} for {self.assignment.title}"
+
+
+class DatabaseSubmission(models.Model):
+    """Student's SQL query submissions"""
+    STATUS_CHOICES = [
+        ('submitted', 'Submitted'),
+        ('checked', 'Checked'),
+        ('reassigned', 'Reassigned'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='database_submissions')
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='database_submissions')
+    question = models.ForeignKey(DatabaseQuestion, on_delete=models.CASCADE, related_name='submissions')
+    submitted_query = models.TextField()
+    query_result = models.JSONField(null=True, blank=True, help_text="Actual query result")
+    is_correct = models.BooleanField(default=False)
+    execution_time = models.FloatField(null=True, blank=True, help_text="Query execution time in ms")
+    error_message = models.TextField(blank=True, null=True)
+    auto_marks = models.FloatField(default=0.0)
+    custom_marks = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='submitted')
+    feedback = models.TextField(blank=True, null=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('student', 'assignment', 'question')
+        ordering = ['-submitted_at']
+    
+    def __str__(self):
+        return f"DB Submission by {self.student.username} for Q{self.question.id}"
