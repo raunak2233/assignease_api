@@ -644,7 +644,7 @@ class DatabaseSchemaSerializer(serializers.ModelSerializer):
         model = DatabaseSchema
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
-
+ 
 
 class DatabaseQuestionSerializer(serializers.ModelSerializer):
     assignment_title = serializers.CharField(source='assignment.title', read_only=True)

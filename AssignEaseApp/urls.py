@@ -59,4 +59,4 @@ urlpatterns = [
     path('test-database-schema/', TestDatabaseSchemaView.as_view(), name='test-database-schema'),
     path('test-database-query-with-schema/', TestDatabaseQueryWithSchemaView.as_view(), name='test-database-query-with-schema'),
     path('database-submissions/student/<int:student_id>/assignment/<int:assignment_id>/', get_database_submissions_by_student, name='database-submissions-by-student'),
-]
+] 

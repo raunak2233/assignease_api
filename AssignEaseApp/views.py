@@ -909,21 +909,35 @@ class DatabaseSchemaViewSet(viewsets.ModelViewSet):
             # Students can see schemas for assignments in their classes
             student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
             return DatabaseSchema.objects.filter(assignment__class_assigned__in=student_classes)
-
+ 
 
 class DatabaseQuestionViewSet(viewsets.ModelViewSet):
     """ViewSet for managing database questions"""
     queryset = DatabaseQuestion.objects.all()
     serializer_class = DatabaseQuestionSerializer
     permission_classes = [IsAuthenticated]
+    filterset_fields = ["assignment"]
     
     def get_queryset(self):
+
         user = self.request.user
+        assignment_id = self.request.query_params.get("assignment")
+
         if user.profile.role == 'teacher':
-            return DatabaseQuestion.objects.filter(assignment__teacher=user)
+            qs = DatabaseQuestion.objects.filter(assignment__teacher=user)
         else:
-            student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
-            return DatabaseQuestion.objects.filter(assignment__class_assigned__in=student_classes)
+            student_classes = ClassStudent.objects.filter(
+                student=user
+            ).values_list('class_assigned', flat=True)
+    
+            qs = DatabaseQuestion.objects.filter(
+                assignment__class_assigned__in=student_classes
+            )
+    
+        if assignment_id:
+            qs = qs.filter(assignment_id=assignment_id)
+    
+        return qs
 
 
 class DatabaseSubmissionViewSet(viewsets.ModelViewSet):
