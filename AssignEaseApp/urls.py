@@ -55,6 +55,7 @@ urlpatterns = [
     path('ai-evaluations/<int:pk>/', views.AIEvaluationDetailView.as_view(), name='ai-evaluation-detail'),
     
     # Database Assignment endpoints
+    # Database Assignment endpoints with AI generation
     path('test-database-query/', TestDatabaseQueryView.as_view(), name='test-database-query'),
     path('test-database-schema/', TestDatabaseSchemaView.as_view(), name='test-database-schema'),
     path('test-database-query-with-schema/', TestDatabaseQueryWithSchemaView.as_view(), name='test-database-query-with-schema'),
