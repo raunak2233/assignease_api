@@ -59,6 +59,9 @@ Student answer:
 class AIGradingError(Exception):
     pass
 
+class AIGenerationError(Exception):
+    pass
+
 def call_qwen(question: str, answer: str, retries: int = 1) -> dict:
     prompt = PROMPT_TEMPLATE.replace("{{QUESTION}}", question).replace("{{ANSWER}}", answer)
 
@@ -150,3 +153,120 @@ def normalize_ai_result(result: dict) -> dict:
         result["feedback"] = "No explanation provided."
 
     return result
+
+
+def generate_database_assignment(questions_list: list) -> dict:
+    """
+    Generate database schema and questions from natural language descriptions using AI.
+    
+    Args:
+        questions_list: List of question descriptions in natural language
+        
+    Returns:
+        dict with keys:
+        - schema_sql: CREATE TABLE statements
+        - sample_data_sql: INSERT statements
+        - questions: List of generated questions with expected results
+    """
+
+    # Create simple, direct prompt
+    q_list = "\n".join([f"- {q}" for q in questions_list])
+    
+    prompt = f"""Generate a database assignment. Return ONLY valid JSON.
+
+Questions to create:
+{q_list}
+
+Return this JSON structure:
+{{"schema_sql":"CREATE TABLE...; CREATE TABLE...;","sample_data_sql":"INSERT INTO...;","questions":[{{"question_text":"What is...","question_type":"select","expected_query":"SELECT...","expected_result":[{{"col":"val"}}]}}]}}
+
+Create realistic SQL schemas with sample data. Each question must have question_text, question_type (select), expected_query, and expected_result array.
+All SQL must work in SQLite. Return ONLY JSON, no explanation."""
+
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "top_p": 1,
+            "repeat_penalty": 1.1,
+            "num_predict": 2000,
+        },
+    }
+
+    try:
+        res = requests.post(OLLAMA_URL, json=payload, timeout=120)
+
+        if res.status_code != 200:
+            raise AIGradingError(f"Ollama HTTP {res.status_code}: {res.text[:200]}")
+
+        data = res.json()
+
+        if "error" in data:
+            raise AIGradingError(f"Ollama error: {data['error']}")
+
+        raw = data.get("response", "").strip()
+
+        if not raw:
+            raise AIGradingError("AI returned empty response")
+
+        # Find the first { and try to parse from there
+        start_idx = raw.find('{')
+        if start_idx == -1:
+            raise AIGradingError(f"No JSON found. Response starts with: {raw[:100]}")
+
+        # Extract from first { to the end, but try to parse valid JSON
+        remaining = raw[start_idx:]
+        result = None
+        best_result = None
+        best_keys = 0
+        last_error = None
+        
+        # Try to parse by finding matching closing brace
+        brace_count = 0
+        for i, char in enumerate(remaining):
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    # Found matching brace, try to parse
+                    json_str = remaining[:i+1]
+                    try:
+                        candidate = json.loads(json_str)
+                        # Count how many required keys it has
+                        keys_found = sum(1 for k in ["schema_sql", "sample_data_sql", "questions"] if k in candidate)
+                        if keys_found > best_keys:
+                            best_keys = keys_found
+                            best_result = candidate
+                        if keys_found == 3:  # All required keys found
+                            result = candidate
+                            break
+                    except json.JSONDecodeError as e:
+                        last_error = f"Parse failed at char {i}: {str(e)[:50]}"
+                        continue
+
+        if not result and best_result:
+            # Use the best partial result, but warn about it
+            result = best_result
+            missing = [k for k in ["schema_sql", "sample_data_sql", "questions"] if k not in result]
+            raise AIGradingError(f"Incomplete response - missing: {missing}. Found {list(result.keys())}")
+
+        if not result:
+            raise AIGradingError(f"Could not parse JSON. Last error: {last_error}. Response chars 0-200: {remaining[:200]}")
+
+        # Validate result structure
+        if not all(key in result for key in ["schema_sql", "sample_data_sql", "questions"]):
+            missing = [k for k in ["schema_sql", "sample_data_sql", "questions"] if k not in result]
+            raise AIGradingError(f"Missing keys: {missing}. Has: {list(result.keys())}")
+
+        if not isinstance(result.get("questions"), list) or len(result["questions"]) == 0:
+            raise AIGradingError("Questions not a non-empty list")
+
+        return result
+
+    except json.JSONDecodeError as e:
+        raise AIGradingError(f"JSON parse error: {str(e)}")
+    except Exception as e:
+        raise AIGradingError(f"Database assignment generation failed: {str(e)}") from e

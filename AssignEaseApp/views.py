@@ -1202,3 +1202,71 @@ def get_database_submissions_by_student(request, student_id, assignment_id):
             {'error': str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+class GenerateDatabaseAssignmentWithAIView(APIView):
+    """Generate database assignment schema and questions using AI"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        
+        # Check teacher role
+        try:
+            profile = user.profile
+            if profile.role != 'teacher':
+                return Response(
+                    {"error": "Only teachers can generate assignments with AI"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "User profile not found"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        questions = request.data.get('questions', [])
+        
+        if not questions or not isinstance(questions, list):
+            return Response(
+                {"error": "questions must be a non-empty list"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(questions) > 20:
+            return Response(
+                {"error": "Maximum 20 questions allowed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"AI generation requested for {len(questions)} questions")
+            
+            from .llm import generate_database_assignment
+            
+            logger.info("Starting AI database assignment generation...")
+            result = generate_database_assignment(questions)
+            logger.info("AI generation completed successfully")
+            
+            # Validate the result
+            if not result.get('schema_sql'):
+                raise ValueError("No schema generated")
+            if not result.get('questions'):
+                raise ValueError("No questions generated")
+            
+            logger.info(f"Generated {len(result.get('questions', []))} questions with schema")
+            return Response(result, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f"AI generation error: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            return Response(
+                {"error": f"AI generation failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

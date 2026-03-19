@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet, DatabaseSchemaViewSet, DatabaseQuestionViewSet, DatabaseSubmissionViewSet, TestDatabaseQueryView, TestDatabaseSchemaView, TestDatabaseQueryWithSchemaView, get_database_submissions_by_student
+from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet, DatabaseSchemaViewSet, DatabaseQuestionViewSet, DatabaseSubmissionViewSet, TestDatabaseQueryView, TestDatabaseSchemaView, TestDatabaseQueryWithSchemaView, get_database_submissions_by_student, GenerateDatabaseAssignmentWithAIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .oauth_views import GoogleOAuthView, GitHubOAuthView
 from .otp_views import SendOTPView, VerifyOTPView, ResetPasswordView
@@ -59,4 +59,5 @@ urlpatterns = [
     path('test-database-schema/', TestDatabaseSchemaView.as_view(), name='test-database-schema'),
     path('test-database-query-with-schema/', TestDatabaseQueryWithSchemaView.as_view(), name='test-database-query-with-schema'),
     path('database-submissions/student/<int:student_id>/assignment/<int:assignment_id>/', get_database_submissions_by_student, name='database-submissions-by-student'),
-] 
+    path('generate-database-assignment-ai/', GenerateDatabaseAssignmentWithAIView.as_view(), name='generate-database-assignment-ai'),
+]
