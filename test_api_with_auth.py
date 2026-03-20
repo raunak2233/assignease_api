@@ -64,7 +64,7 @@ print("\n" + "="*60)
 print("Testing AI Database Assignment Generation API")
 print("="*60)
 
-API_URL = "http://127.0.0.1:8000/api/generate-database-assignment-ai/"
+API_URL = "https://api.assignease.io/api/generate-database-assignment-ai/"
 payload = {
     "questions": [
         "Create a student database with names and roll numbers",
@@ -128,4 +128,4 @@ try:
     
 except Exception as e:
     print(f"✗ Request failed: {type(e).__name__}: {str(e)}")
-    print("\nNote: Make sure Django server is running on http://127.0.0.1:8000")
+    print("\nNote: Make sure Django server is running on https://api.assignease.io")

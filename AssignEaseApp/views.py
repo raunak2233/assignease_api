@@ -43,11 +43,27 @@ def get_student_assignments(request, student_id):
 def get_students_in_class(request, class_id):
     class_instance = get_object_or_404(Class, id=class_id)
 
-    class_students = ClassStudent.objects.filter(class_assigned=class_instance)
+    class_students = ClassStudent.objects.filter(
+        class_assigned=class_instance
+    ).select_related('student', 'student__profile', 'class_assigned')
+    formatted_students = []
 
-    serializer = ClassStudentSerializer(class_students, many=True)
+    for class_student in class_students:
+        student = class_student.student
+        profile = getattr(student, 'profile', None)
+        formatted_students.append({
+            "id": class_student.id,
+            "student": student.id,
+            "user": student.id,
+            "class_assigned": class_student.class_assigned_id,
+            "class_name": class_student.class_assigned.class_name,
+            "student_name": getattr(profile, 'name', None),
+            "username": student.username,
+            "email": student.email,
+            "enrollment_number": getattr(profile, 'enrollment_number', None),
+        })
 
-    return Response(serializer.data)
+    return Response(formatted_students)
 
 class AssignmentDetailView(generics.RetrieveAPIView):
     queryset = Assignment.objects.all()
@@ -324,21 +340,44 @@ class ClassStudentViewSet(viewsets.ModelViewSet):
     queryset = ClassStudent.objects.all()
     serializer_class = ClassStudentSerializer
     permission_classes = [IsAuthenticated]
+
+    def _format_class_students(self, students):
+        formatted_students = []
+
+        for class_student in students:
+            student = class_student.student
+            profile = getattr(student, 'profile', None)
+            formatted_students.append({
+                "id": class_student.id,
+                "student": student.id,
+                "user": student.id,
+                "class_assigned": class_student.class_assigned_id,
+                "class_name": class_student.class_assigned.class_name,
+                "student_name": getattr(profile, 'name', None),
+                "username": student.username,
+                "email": student.email,
+                "enrollment_number": getattr(profile, 'enrollment_number', None),
+            })
+
+        return formatted_students
     
     @action(detail=True, methods=['get'], url_path='students')
     def get_students_in_class(self, request, pk=None):
         try:
             # Filter students by class_assigned
-            students = ClassStudent.objects.filter(class_assigned=pk)
+            students = ClassStudent.objects.filter(
+                class_assigned=pk
+            ).select_related('student', 'student__profile', 'class_assigned')
             if not students.exists():
                 return Response(
                     {"message": "No students found in this class."},
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Serialize the data
-            serializer = self.get_serializer(students, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(
+                self._format_class_students(students),
+                status=status.HTTP_200_OK,
+            )
         
         except Exception as e:
             print("Error:", e)

@@ -151,13 +151,15 @@ class ClassSerializer(serializers.ModelSerializer):
 
 class ClassStudentSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source="student.profile.name", read_only=True)
+    username = serializers.CharField(source="student.username", read_only=True)
+    email = serializers.CharField(source="student.email", read_only=True)
     enrollment_number = serializers.CharField(source="student.profile.enrollment_number", read_only=True)
     class_name = serializers.CharField(source="class_assigned.class_name", read_only=True)
     class_assigned = serializers.PrimaryKeyRelatedField(queryset=Class.objects.all(), write_only=True)
 
     class Meta: 
         model = ClassStudent
-        fields = ['id', 'student', 'class_assigned', 'class_name', 'student_name', 'enrollment_number']
+        fields = ['id', 'student', 'class_assigned', 'class_name', 'student_name', 'username', 'email', 'enrollment_number']
 
     def validate(self, data):
         student = data.get('student')

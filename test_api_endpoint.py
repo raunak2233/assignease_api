@@ -18,7 +18,7 @@ payload = {
     ]
 }
 
-API_URL = "http://127.0.0.1:8000/api/generate-database-assignment-ai/"
+API_URL = "https://api.assignease.io/api/generate-database-assignment-ai/"
 
 print("="*60)
 print("Testing AI Database Assignment Generation API")

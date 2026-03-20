@@ -63,7 +63,7 @@ print(f"✓ Assignment: {test_assignment.title} (ID: {test_assignment.id})")
 
 # Part 4: Test AI generation API
 print("\n[PART 4] Testing AI generation API...")
-API_URL = "http://127.0.0.1:8000/api/generate-database-assignment-ai/"
+API_URL = "https://api.assignease.io/api/generate-database-assignment-ai/"
 payload = {
     "questions": [
         "Create a library database with books and members",
