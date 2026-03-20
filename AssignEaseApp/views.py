@@ -1,7 +1,7 @@
 from rest_framework import viewsets, generics
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import User, Profile, Class, Contact, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, Submission, TeacherFeedback, NonCodingSubmission, TestCase, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
-from .serializers import RegistrationSerializer, UserSerializer, ContactSerializer, ProfileSerializer, ClassSerializer, ClassStudentSerializer, ProgrammingLanguageSerializer, AssignmentSerializer, AssignmentQuestionSerializer, SubmissionSerializer, TeacherFeedbackSerializer, ClassStudentDetailSerializer, CustomTokenObtainPairSerializer, AssignmentAttachmentSerializer, NonCodingSubmissionSerializer, TestCaseSerializer, TestCaseResultSerializer, AIEvaluationSerializer, DatabaseSchemaSerializer, DatabaseQuestionSerializer, DatabaseSubmissionSerializer
+from .models import User, Profile, Class, Contact, BugReport, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, CodingQuestion, CodingTestCase, NonCodingQuestion, Submission, TeacherFeedback, NonCodingSubmission, TestCase, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
+from .serializers import RegistrationSerializer, UserSerializer, ContactSerializer, BugReportSerializer, ProfileSerializer, ClassSerializer, ClassStudentSerializer, ProgrammingLanguageSerializer, AssignmentSerializer, AssignmentQuestionSerializer, CodingQuestionSerializer, CodingTestCaseSerializer, NonCodingQuestionSerializer, SubmissionSerializer, TeacherFeedbackSerializer, ClassStudentDetailSerializer, CustomTokenObtainPairSerializer, AssignmentAttachmentSerializer, NonCodingSubmissionSerializer, TestCaseSerializer, TestCaseResultSerializer, AIEvaluationSerializer, DatabaseSchemaSerializer, DatabaseQuestionSerializer, DatabaseSubmissionSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
@@ -326,7 +326,6 @@ class ClassStudentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     @action(detail=True, methods=['get'], url_path='students')
-    
     def get_students_in_class(self, request, pk=None):
         try:
             # Filter students by class_assigned
@@ -348,6 +347,42 @@ class ClassStudentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    @action(detail=False, methods=['delete'], url_path='remove-student')
+    def remove_student_from_class(self, request):
+        """Remove a student from a class using query parameters"""
+        try:
+            class_id = request.query_params.get('class_id')
+            student_id = request.query_params.get('student_id')
+            
+            if not class_id or not student_id:
+                return Response(
+                    {"message": "class_id and student_id are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Find and delete the ClassStudent record
+            class_student = ClassStudent.objects.get(
+                class_assigned=class_id,
+                student=student_id
+            )
+            class_student.delete()
+            
+            return Response(
+                {"message": "Student successfully removed from class"},
+                status=status.HTTP_200_OK
+            )
+        
+        except ClassStudent.DoesNotExist:
+            return Response(
+                {"message": "Student not found in this class"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            print("Error removing student:", e)
+            return Response(
+                {"error": f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -657,6 +692,68 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         return TestCase.objects.filter(question__assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
 
 
+class CodingQuestionViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing coding questions"""
+    queryset = CodingQuestion.objects.all()
+    serializer_class = CodingQuestionSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["assignment"]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        # Teachers: return coding questions for assignments they own
+        if profile and profile.role == 'teacher':
+            return CodingQuestion.objects.filter(assignment__teacher=user)
+        # Students: return coding questions for assignments in their classes
+        return CodingQuestion.objects.filter(assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
+
+
+class CodingTestCaseViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing coding test cases"""
+    queryset = CodingTestCase.objects.all()
+    serializer_class = CodingTestCaseSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["question"]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        # Teachers: return test cases for questions in assignments they own
+        if profile and profile.role == 'teacher':
+            return CodingTestCase.objects.filter(question__assignment__teacher=user)
+        # Students: no access to create/modify test cases; allow read-only for assignments in their classes
+        return CodingTestCase.objects.filter(question__assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
+
+
+class NonCodingQuestionViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing non-coding questions"""
+    queryset = NonCodingQuestion.objects.all()
+    serializer_class = NonCodingQuestionSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["assignment"]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        # Teachers: return non-coding questions for assignments they own
+        if profile and profile.role == 'teacher':
+            return NonCodingQuestion.objects.filter(assignment__teacher=user)
+        # Students: return non-coding questions for assignments in their classes
+        return NonCodingQuestion.objects.filter(assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
+
 
 class RunTestCasesView(APIView): 
     permission_classes = [IsAuthenticated]
@@ -892,6 +989,26 @@ class ContactViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
 
 
+class BugReportViewSet(viewsets.ModelViewSet):
+    queryset = BugReport.objects.all().order_by('-created_at')
+    serializer_class = BugReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        if profile and profile.role == 'teacher':
+            return BugReport.objects.all().order_by('-created_at')
+        return BugReport.objects.filter(reporter=user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(reporter=self.request.user)
+
+
 # Database Assignment Views
 
 class DatabaseSchemaViewSet(viewsets.ModelViewSet):
@@ -983,21 +1100,39 @@ class DatabaseSubmissionViewSet(viewsets.ModelViewSet):
             
             # Execute and validate query based on question type
             if question.question_type == 'ddl_dml':
-                # For DDL/DML questions, use verification query
-                if not question.verification_query:
-                    return Response(
-                        {'error': 'Verification query not configured for this question'},
-                        status=status.HTTP_400_BAD_REQUEST
+                # For DDL/DML questions, prefer verification query when configured.
+                # Older dynamic assignments may not have this field populated yet,
+                # so allow submission and mark it for manual review instead of failing.
+                if question.verification_query:
+                    result = DatabaseService.validate_ddl_dml_query(
+                        db_type=schema.db_type,
+                        schema_sql=schema.schema_sql,
+                        sample_data_sql=schema.sample_data_sql,
+                        student_query=submitted_query,
+                        verification_query=question.verification_query,
+                        expected_result=question.expected_result
                     )
-                
-                result = DatabaseService.validate_ddl_dml_query(
-                    db_type=schema.db_type,
-                    schema_sql=schema.schema_sql,
-                    sample_data_sql=schema.sample_data_sql,
-                    student_query=submitted_query,
-                    verification_query=question.verification_query,
-                    expected_result=question.expected_result
-                )
+                else:
+                    with DatabaseService.get_db_connection(schema.db_type) as conn:
+                        DatabaseService.setup_schema(
+                            conn,
+                            schema.schema_sql,
+                            schema.sample_data_sql,
+                        )
+                        student_result, exec_time = DatabaseService.execute_query(
+                            conn,
+                            submitted_query,
+                            schema.db_type,
+                            allow_write_operations=True
+                        )
+
+                    result = {
+                        'is_correct': False,
+                        'query_result': student_result,
+                        'execution_time': exec_time,
+                        'error_message': None,
+                        'feedback': 'Query executed successfully, but auto-verification is unavailable for this question. Manual review required.',
+                    }
             else:
                 # For SELECT questions, direct validation
                 result = DatabaseService.execute_and_validate(

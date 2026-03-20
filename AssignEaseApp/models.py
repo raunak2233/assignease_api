@@ -97,6 +97,7 @@ class Assignment(models.Model):
         ('coding', 'Coding'),
         ('non_coding', 'Non-Coding'),
         ('database', 'Database'),
+        ('dynamic', 'Dynamic'),
     ]
     
     SUBMISSION_TYPE_CHOICES = [
@@ -144,6 +145,49 @@ class AssignmentQuestion(models.Model):
 
     def __str__(self):
         return f"Question {self.id} for {self.assignment.title}"
+
+
+class CodingQuestion(models.Model):
+    """Coding-specific questions with language, starter code, and test cases"""
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='coding_questions')
+    title = models.TextField()
+    description = models.TextField(blank=True, null=True)
+    language = models.CharField(max_length=50)  # e.g., 'python', 'javascript', 'cpp'
+    starter_code = models.TextField(blank=True, null=True)
+    total_marks = models.FloatField(default=10.0)
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"CodingQuestion {self.id} ({self.language}) for {self.assignment.title}"
+
+
+class NonCodingQuestion(models.Model):
+    """Non-coding questions (text/file submission based)"""
+    SUBMISSION_TYPE_CHOICES = [
+        ('text', 'Text Answer'),
+        ('file', 'File Submission'),
+    ]
+
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='non_coding_questions')
+    question_text = models.TextField()
+    description = models.TextField(blank=True, null=True)
+    submission_format = models.CharField(max_length=20, choices=SUBMISSION_TYPE_CHOICES, default='text')
+    total_marks = models.FloatField(default=10.0)
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"NonCodingQuestion {self.id} for {self.assignment.title}"
+
 
 class AssignmentAttachment(models.Model):
 
@@ -261,6 +305,28 @@ class TestCase(models.Model):
         return f"TC for {self.question_id} - {self.id}"
 
 
+class CodingTestCase(models.Model):
+    """Test cases for CodingQuestion"""
+    question = models.ForeignKey(CodingQuestion, on_delete=models.CASCADE, related_name='testcases')
+    input = models.TextField(blank=True, default='')
+    expected_output = models.TextField(blank=True, default='')
+    marks = models.IntegerField(default=1)
+    visibility = models.CharField(
+        max_length=10,
+        choices=(("public", "Public"), ("hidden", "Hidden")),
+        default="hidden"
+    )
+    timeout = models.IntegerField(default=2)
+    memory_limit = models.IntegerField(default=128000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"CodingTC for CodingQuestion {self.question_id} - {self.id}"
+
+
 class TestCaseResult(models.Model):
     """Stores the result of each test case execution for a submission"""
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name='testcase_results')
@@ -292,10 +358,36 @@ class Contact(models.Model):
     def __str__(self):
         return f"Contact from {self.name} <{self.email}>"
 
+
+class BugReport(models.Model):
+    reporter = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bug_reports',
+    )
+    name = models.CharField(max_length=255)
+    email = models.EmailField()
+    page_name = models.CharField(max_length=255)
+    page_url = models.URLField(max_length=1000)
+    reference_link = models.URLField(max_length=1000, blank=True, null=True)
+    bug_description = models.TextField()
+    user_agent = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Bug report on {self.page_name} by {self.name}"
+
 class AIEvaluation(models.Model):
-    submission = models.OneToOneField(Submission, on_delete=models.CASCADE, related_name='ai_evaluation')
+    submission = models.OneToOneField(Submission, on_delete=models.CASCADE, related_name='ai_evaluation', null=True, blank=True)
+    noncoding_submission = models.OneToOneField('NonCodingSubmission', on_delete=models.CASCADE, related_name='ai_evaluation', null=True, blank=True)
+    database_submission = models.OneToOneField('DatabaseSubmission', on_delete=models.CASCADE, related_name='ai_evaluation', null=True, blank=True)
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE)
-    question = models.ForeignKey(AssignmentQuestion, on_delete=models.CASCADE)
+    question = models.ForeignKey(AssignmentQuestion, on_delete=models.CASCADE, null=True, blank=True)
     student = models.ForeignKey(User, on_delete=models.CASCADE)
 
     question_text = models.TextField()
@@ -320,7 +412,13 @@ class AIEvaluation(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"AI Eval for Submission {self.submission_id}"
+        if self.submission_id:
+            return f"AI Eval for Coding Submission {self.submission_id}"
+        if self.database_submission_id:
+            return f"AI Eval for Database Submission {self.database_submission_id}"
+        if self.noncoding_submission_id:
+            return f"AI Eval for Non-Coding Submission {self.noncoding_submission_id}"
+        return f"AI Eval #{self.pk}"
 
 
 # Database Assignment Models

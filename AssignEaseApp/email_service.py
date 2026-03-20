@@ -15,6 +15,22 @@ class EmailService:
     """Handles sending formatted HTML emails"""
 
     @staticmethod
+    def _get_ai_subject_entities(ai_evaluation):
+        assignment = ai_evaluation.assignment
+        teacher = assignment.teacher if assignment else None
+
+        if ai_evaluation.question:
+            question_title = ai_evaluation.question.title
+        elif ai_evaluation.database_submission:
+            question_title = ai_evaluation.database_submission.question.question_text
+        elif ai_evaluation.noncoding_submission:
+            question_title = ai_evaluation.question_text or "Non-Coding Response"
+        else:
+            question_title = ai_evaluation.question_text or "Submission"
+
+        return assignment, teacher, question_title
+
+    @staticmethod
     def send_email(
         subject: str,
         recipients: List[str],
@@ -186,8 +202,8 @@ class EmailService:
     @staticmethod
     def send_ai_evaluation_to_student(ai_evaluation) -> bool:
         """Notify student about AI evaluation results"""
-        submission = ai_evaluation.submission
-        subject = f"🤖 AI Evaluation Complete: {submission.assignment.title}"
+        assignment, _, question_title = EmailService._get_ai_subject_entities(ai_evaluation)
+        subject = f"🤖 AI Evaluation Complete: {assignment.title}"
         recipients = [ai_evaluation.student.email]
         
         # Get student's profile name
@@ -195,8 +211,8 @@ class EmailService:
         
         context = {
             'student_name': student_name,
-            'assignment_title': submission.assignment.title,
-            'question_title': ai_evaluation.question.title,
+            'assignment_title': assignment.title,
+            'question_title': question_title,
             'ai_score': ai_evaluation.ai_score,
             'confidence': ai_evaluation.confidence,
             'feedback': ai_evaluation.feedback,
@@ -215,21 +231,20 @@ class EmailService:
     @staticmethod
     def send_ai_evaluation_to_teacher(ai_evaluation) -> bool:
         """Notify teacher about AI evaluation completion for a student submission"""
-        submission = ai_evaluation.submission
-        teacher = submission.assignment.teacher
+        assignment, teacher, question_title = EmailService._get_ai_subject_entities(ai_evaluation)
         
         # Get teacher and student profile names
         teacher_name = teacher.profile.name if hasattr(teacher, 'profile') and teacher.profile.name else teacher.first_name or teacher.username
-        student_name = submission.student.profile.name if hasattr(submission.student, 'profile') and submission.student.profile.name else submission.student.first_name or submission.student.username
-        
-        subject = f"📊 AI Evaluation Complete: {student_name} - {submission.assignment.title}"
+        student_name = ai_evaluation.student.profile.name if hasattr(ai_evaluation.student, 'profile') and ai_evaluation.student.profile.name else ai_evaluation.student.first_name or ai_evaluation.student.username
+
+        subject = f"📊 AI Evaluation Complete: {student_name} - {assignment.title}"
         recipients = [teacher.email]
-        
+
         context = {
             'teacher_name': teacher_name,
             'student_name': student_name,
-            'assignment_title': submission.assignment.title,
-            'question_title': ai_evaluation.question.title,
+            'assignment_title': assignment.title,
+            'question_title': question_title,
             'ai_score': ai_evaluation.ai_score,
             'confidence': ai_evaluation.confidence,
             'feedback': ai_evaluation.feedback,

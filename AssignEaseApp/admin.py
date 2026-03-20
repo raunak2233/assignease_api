@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
+from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, AssignmentQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, DatabaseSchema, DatabaseQuestion, DatabaseSubmission, BugReport
 
 admin.site.register(Profile)
 admin.site.register(Class)
@@ -18,3 +18,4 @@ admin.site.register(TestCaseResult)
 admin.site.register(DatabaseSchema)
 admin.site.register(DatabaseQuestion)
 admin.site.register(DatabaseSubmission)
+admin.site.register(BugReport)

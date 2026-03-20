@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, Contact, AssignmentQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
+from .models import Profile, Class, ClassStudent, ProgrammingLanguage, Assignment, Contact, BugReport, AssignmentQuestion, CodingQuestion, CodingTestCase, NonCodingQuestion, Submission, TeacherFeedback, AssignmentAttachment, SubmissionFile, NonCodingSubmission, NonCodingSubmissionFile, TestCase, TestCaseResult, AIEvaluation, DatabaseSchema, DatabaseQuestion, DatabaseSubmission
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.core.exceptions import ValidationError
@@ -227,7 +227,50 @@ class TestCaseResultSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+
+class CodingTestCaseSerializer(serializers.ModelSerializer):
+    question = serializers.PrimaryKeyRelatedField(queryset=CodingQuestion.objects.all())
+    input = serializers.CharField(required=False, allow_blank=True, default='')
+    expected_output = serializers.CharField(required=False, allow_blank=True, default='')
+
+    class Meta:
+        model = CodingTestCase
+        fields = ['id', 'question', 'input', 'expected_output', 'marks', 'visibility', 'timeout', 'memory_limit', 'created_at']
+        read_only_fields = ['created_at']
+
+    def create(self, validated_data):
+        return CodingTestCase.objects.create(**validated_data)
+
+
+class CodingQuestionSerializer(serializers.ModelSerializer):
+    testcases = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CodingQuestion
+        fields = ['id', 'assignment', 'title', 'description', 'language', 'starter_code', 'total_marks', 'order', 'testcases', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def get_testcases(self, obj):
+        # Return public testcases for students, all for teachers
+        request = self.context.get('request')
+        if request and hasattr(request.user, 'profile'):
+            if request.user.profile.role == 'student':
+                testcases = obj.testcases.filter(visibility='public')
+            else:
+                testcases = obj.testcases.all()
+        else:
+            testcases = obj.testcases.filter(visibility='public')
+        
+        return CodingTestCaseSerializer(testcases, many=True).data
+
  
+class NonCodingQuestionSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = NonCodingQuestion
+        fields = ['id', 'assignment', 'question_text', 'description', 'submission_format', 'total_marks', 'order', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
 class AssignmentQuestionSerializer(serializers.ModelSerializer):
     testcases = serializers.SerializerMethodField()
     
@@ -251,7 +294,7 @@ class AssignmentQuestionSerializer(serializers.ModelSerializer):
 class AssignmentSerializer(serializers.ModelSerializer):
     due_date = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y', '%m-%d-%Y'])
     class_name = serializers.CharField(source='class_assigned.class_name', read_only=True)
-    questions = AssignmentQuestionSerializer(many=True, read_only=True, source='assignmentquestion_set')
+    questions = serializers.SerializerMethodField()
     is_submitted = serializers.SerializerMethodField()
     attachments = serializers.SerializerMethodField()
     assignment_type = serializers.ChoiceField(choices=Assignment.ASSIGNMENT_TYPE_CHOICES, required=False)
@@ -270,6 +313,96 @@ class AssignmentSerializer(serializers.ModelSerializer):
             'submission_type','submission_type_display',
             'is_submitted','attachments'
         ]
+
+    def _get_submission_question_id(self, assignment, title, total_marks):
+        mirror_question, _ = AssignmentQuestion.objects.get_or_create(
+            assignment=assignment,
+            title=title,
+            defaults={"total_marks": total_marks},
+        )
+
+        if mirror_question.total_marks != total_marks:
+            mirror_question.total_marks = total_marks
+            mirror_question.save(update_fields=["total_marks"])
+
+        return mirror_question.id
+
+    def get_questions(self, obj):
+        """Fetch questions based on assignment type"""
+        request = self.context.get('request')
+        
+        if obj.assignment_type == 'dynamic':
+            questions_data = []
+            
+            # Add coding questions
+            coding_qs = obj.coding_questions.all().order_by('order')
+            for cq in coding_qs:
+                testcases = cq.testcases.all()
+                if request and hasattr(request.user, 'profile') and request.user.profile.role == 'student':
+                    testcases = testcases.filter(visibility='public')
+                
+                q_data = {
+                    'id': cq.id,
+                    'type': 'coding',
+                    'submission_question_id': self._get_submission_question_id(
+                        obj,
+                        cq.title,
+                        cq.total_marks,
+                    ),
+                    'title': cq.title,
+                    'description': cq.description,
+                    'total_marks': cq.total_marks,
+                    'language': cq.language,
+                    'starter_code': cq.starter_code,
+                    'testcases': CodingTestCaseSerializer(testcases, many=True).data,
+                    'order': cq.order,
+                }
+                questions_data.append(q_data)
+            
+            # Add database questions
+            db_qs = obj.database_questions.all().order_by('order')
+            for dq in db_qs:
+                # Get the schema for this assignment
+                schema = obj.database_schema  # related_name from DatabaseSchema model
+                schema_data = {
+                    'id': schema.id,
+                    'schema_sql': schema.schema_sql,
+                    'sample_data_sql': schema.sample_data_sql,
+                } if schema else {}
+                
+                q_data = {
+                    'id': dq.id,
+                    'type': 'database',
+                    'title': dq.question_text,
+                    'description': dq.hints,
+                    'total_marks': dq.total_marks,
+                    'question_type': dq.question_type,
+                    'expected_query': dq.expected_query,
+                    'order': dq.order,
+                    'schema': schema_data,
+                }
+                questions_data.append(q_data)
+            
+            # Add non-coding questions
+            nc_qs = obj.non_coding_questions.all().order_by('order')
+            for ncq in nc_qs:
+                q_data = {
+                    'id': ncq.id,
+                    'type': 'non_coding',
+                    'title': ncq.question_text,
+                    'description': ncq.description,
+                    'total_marks': ncq.total_marks,
+                    'submission_format': ncq.submission_format,
+                    'order': ncq.order,
+                }
+                questions_data.append(q_data)
+            
+            # Sort by order
+            return sorted(questions_data, key=lambda x: x.get('order', 0))
+        else:
+            # For non-dynamic assignments, use the original question set
+            questions = obj.assignmentquestion_set.all()
+            return AssignmentQuestionSerializer(questions, many=True, context=self.context).data
 
     def get_is_submitted(self, obj):
         student_id = self.context.get('student_id', None)
@@ -293,6 +426,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
 class SubmissionSerializer(serializers.ModelSerializer):
     title = serializers.CharField(source="assignment.title", read_only=True)
     subject = serializers.CharField(source="assignment.class_assigned.class_name", read_only=True)
+    assignment_type = serializers.CharField(source="assignment.assignment_type", read_only=True)
+    assignment_type_display = serializers.CharField(source="assignment.get_assignment_type_display", read_only=True)
     assignment = serializers.PrimaryKeyRelatedField(queryset=Assignment.objects.all())
     student = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     student_info = serializers.SerializerMethodField(read_only=True)
@@ -318,6 +453,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         model = Submission
         fields = [
             'id', 'title', 'subject', 'assignment', 'student', 'student_info', 
+            'assignment_type', 'assignment_type_display',
             'question', 'questiontext', 'code', 'text_submission', 'files', 'files_info', 
             'status', 'feedback', 'submitted_at', 'updated_at',
             'testcase_results', 'auto_marks', 'custom_marks', 'total_testcases', 'passed_testcases'
@@ -431,6 +567,9 @@ class NonCodingSubmissionFileSerializer(serializers.ModelSerializer):
 
 class NonCodingSubmissionSerializer(serializers.ModelSerializer):
     assignment = serializers.PrimaryKeyRelatedField(queryset=Assignment.objects.all())
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    assignment_type = serializers.CharField(source='assignment.assignment_type', read_only=True)
+    assignment_type_display = serializers.CharField(source='assignment.get_assignment_type_display', read_only=True)
     student = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     student_info = serializers.SerializerMethodField(read_only=True)
     text_submission = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -443,7 +582,7 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NonCodingSubmission
-        fields = ['id', 'assignment', 'student', 'student_info', 'text_submission', 'files', 'files_info', 'status', 'feedback', 'submitted_at', 'updated_at']
+        fields = ['id', 'assignment', 'assignment_title', 'assignment_type', 'assignment_type_display', 'student', 'student_info', 'text_submission', 'files', 'files_info', 'status', 'feedback', 'submitted_at', 'updated_at']
         read_only_fields = ['submitted_at', 'updated_at']
 
     def validate(self, data):
@@ -451,8 +590,9 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
         if not assignment:
             raise serializers.ValidationError({"assignment": "This field is required."})
 
-        # Ensure assignment is non-coding
-        if assignment.assignment_type != 'non_coding':
+        # Allow non-coding submissions for dedicated non-coding assignments
+        # and for dynamic assignments that contain non-coding questions.
+        if assignment.assignment_type not in ('non_coding', 'dynamic'):
             raise serializers.ValidationError({"assignment": "This assignment is not a non-coding assignment."})
 
         # Skip content validation during updates if we're only updating status/feedback
@@ -476,13 +616,19 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
                 if not files and existing_files:
                     files = True  # Just to pass the validation
 
-            # Enforce submission_type rules only for creation or content updates
-            if stype == 'text_only' and not text:
-                raise serializers.ValidationError({"text_submission": "This assignment requires a text submission."})
-            if stype == 'files_only' and not files:
-                raise serializers.ValidationError({"files": "This assignment requires file upload(s)."})
-            if stype == 'text_and_files' and not (text or files):
-                raise serializers.ValidationError("This assignment requires text and/or files.")
+            # Dynamic assignments can contain mixed non-coding question formats,
+            # so enforce only a generic "some content is required" rule here.
+            if assignment.assignment_type == 'dynamic':
+                if not (text or files):
+                    raise serializers.ValidationError("This dynamic assignment requires text and/or files.")
+            else:
+                # Enforce submission_type rules only for creation or content updates
+                if stype == 'text_only' and not text:
+                    raise serializers.ValidationError({"text_submission": "This assignment requires a text submission."})
+                if stype == 'files_only' and not files:
+                    raise serializers.ValidationError({"files": "This assignment requires file upload(s)."})
+                if stype == 'text_and_files' and not (text or files):
+                    raise serializers.ValidationError("This assignment requires text and/or files.")
 
         # Validate files if provided
         files = data.get('files', None)
@@ -602,18 +748,74 @@ class ContactSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class BugReportSerializer(serializers.ModelSerializer):
+    reporter_info = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = BugReport
+        fields = [
+            'id',
+            'reporter',
+            'reporter_info',
+            'name',
+            'email',
+            'page_name',
+            'page_url',
+            'reference_link',
+            'bug_description',
+            'user_agent',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'reporter', 'reporter_info', 'created_at']
+
+    def validate(self, data):
+        if not data.get('bug_description', '').strip():
+            raise serializers.ValidationError({
+                'bug_description': 'Bug description is required.'
+            })
+        return data
+
+    def get_reporter_info(self, obj):
+        if not obj.reporter:
+            return None
+        return {
+            'id': obj.reporter.id,
+            'username': obj.reporter.username,
+            'email': obj.reporter.email,
+        }
+
+
 class AIEvaluationSerializer(serializers.ModelSerializer):
     student_info = serializers.SerializerMethodField(read_only=True)
     assignment_title = serializers.CharField(source='assignment.title', read_only=True)
-    submission_id = serializers.IntegerField(source='submission.id', read_only=True)
+    submission_id = serializers.SerializerMethodField(read_only=True)
+    submission_source = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = AIEvaluation
         fields = [
-            'id', 'submission_id', 'assignment', 'assignment_title', 'question', 'student', 'student_info',
+            'id', 'submission_id', 'submission_source', 'assignment', 'assignment_title', 'question', 'student', 'student_info',
             'question_text', 'student_answer', 'mistake_type', 'ai_score', 'confidence', 'feedback',
             'raw_response', 'model_name', 'status', 'error', 'created_at', 'completed_at'
         ]
+
+    def get_submission_id(self, obj):
+        if obj.submission_id:
+            return obj.submission_id
+        if obj.database_submission_id:
+            return obj.database_submission_id
+        if obj.noncoding_submission_id:
+            return obj.noncoding_submission_id
+        return None
+
+    def get_submission_source(self, obj):
+        if obj.submission_id:
+            return "coding"
+        if obj.database_submission_id:
+            return "database"
+        if obj.noncoding_submission_id:
+            return "non_coding"
+        return "unknown"
 
     def get_student_info(self, obj):
         if obj.student:
@@ -662,6 +864,8 @@ class DatabaseSubmissionSerializer(serializers.ModelSerializer):
     student_display_name = serializers.CharField(source='student.profile.name', read_only=True, allow_null=True)
     question_text = serializers.CharField(source='question.question_text', read_only=True)
     assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    assignment_type = serializers.CharField(source='assignment.assignment_type', read_only=True)
+    assignment_type_display = serializers.CharField(source='assignment.get_assignment_type_display', read_only=True)
     total_marks = serializers.FloatField(source='question.total_marks', read_only=True)
     final_marks = serializers.SerializerMethodField()
     

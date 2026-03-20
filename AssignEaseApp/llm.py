@@ -191,7 +191,7 @@ All SQL must work in SQLite. Return ONLY JSON, no explanation."""
             "temperature": 0.2,
             "top_p": 1,
             "repeat_penalty": 1.1,
-            "num_predict": 2000,
+            "num_predict": 4000,  # Increased to allow more tokens for complete response
         },
     }
 
@@ -224,6 +224,18 @@ All SQL must work in SQLite. Return ONLY JSON, no explanation."""
         last_error = None
         
         # Try to parse by finding matching closing brace
+        # Prepare field mappings for normalization
+        field_mappings = {
+            "schemas_sql": "schema_sql",      # Handle plural typo
+            "schema": "schema_sql",            # Handle shorthand
+            "ddl": "schema_sql",               # Handle alternate naming
+            "sample_data": "sample_data_sql",  # Handle shorthand
+            "test_data": "sample_data_sql",    # Handle alternate naming
+            "data_sql": "sample_data_sql",     # Handle alternate naming
+            "question": "questions",           # Handle singular typo
+            "question_list": "questions",      # Handle alternate naming
+        }
+
         brace_count = 0
         for i, char in enumerate(remaining):
             if char == '{':
@@ -235,6 +247,12 @@ All SQL must work in SQLite. Return ONLY JSON, no explanation."""
                     json_str = remaining[:i+1]
                     try:
                         candidate = json.loads(json_str)
+                        
+                        # Normalize field names immediately after parsing
+                        for old_key, new_key in field_mappings.items():
+                            if old_key in candidate and new_key not in candidate:
+                                candidate[new_key] = candidate.pop(old_key)
+                        
                         # Count how many required keys it has
                         keys_found = sum(1 for k in ["schema_sql", "sample_data_sql", "questions"] if k in candidate)
                         if keys_found > best_keys:
@@ -254,9 +272,54 @@ All SQL must work in SQLite. Return ONLY JSON, no explanation."""
             raise AIGradingError(f"Incomplete response - missing: {missing}. Found {list(result.keys())}")
 
         if not result:
-            raise AIGradingError(f"Could not parse JSON. Last error: {last_error}. Response chars 0-200: {remaining[:200]}")
+            # Try to repair incomplete JSON
+            attempt_repair = remaining.rstrip()
+            
+            # If response ends with an unclosed string, close it
+            in_string = False
+            escape_next = False
+            last_quote_pos = -1
+            
+            for i, char in enumerate(attempt_repair):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if char == '\\':
+                    escape_next = True
+                    continue
+                if char == '"':
+                    in_string = not in_string
+                    last_quote_pos = i
+            
+            # If we ended while in a string, close it
+            if in_string:
+                attempt_repair += '"'
+            
+            # Now add missing closing braces and brackets
+            open_braces = attempt_repair.count('{') - attempt_repair.count('}')
+            open_brackets = attempt_repair.count('[') - attempt_repair.count(']')
+            
+            if open_braces > 0 or open_brackets > 0:
+                repair_str = ']' * open_brackets + '}' * open_braces
+                attempt_repair += repair_str
+                
+                try:
+                    result = json.loads(attempt_repair)
+                    
+                    # Normalize field names
+                    for old_key, new_key in field_mappings.items():
+                        if old_key in result and new_key not in result:
+                            result[new_key] = result.pop(old_key)
+                    
+                except json.JSONDecodeError:
+                    pass  # Fall through to error below
+            
+            if not result:
+                raise AIGradingError(f"Could not parse JSON. Response too short or malformed. Response chars 0-300: {remaining[:300]}")
 
-        # Validate result structure
+
+
+        # Validate result structure (normalization already happened above)
         if not all(key in result for key in ["schema_sql", "sample_data_sql", "questions"]):
             missing = [k for k in ["schema_sql", "sample_data_sql", "questions"] if k not in result]
             raise AIGradingError(f"Missing keys: {missing}. Has: {list(result.keys())}")

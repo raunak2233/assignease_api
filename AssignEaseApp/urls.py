@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet, DatabaseSchemaViewSet, DatabaseQuestionViewSet, DatabaseSubmissionViewSet, TestDatabaseQueryView, TestDatabaseSchemaView, TestDatabaseQueryWithSchemaView, get_database_submissions_by_student, GenerateDatabaseAssignmentWithAIView
+from .views import RegisterView, UserViewSet, ProfileViewSet,UpdateSubmissionStatus,AssignmentByQuestionView, StudentDetailView, AssignmentListView, ClassViewSet, StudentSubmissionsView, TestCaseViewSet, CodingQuestionViewSet, CodingTestCaseViewSet, NonCodingQuestionViewSet, ClassStudentViewSet,ClassSimpleDetailView, AssignmentDetailView, ProgrammingLanguageViewSet, AssignmentViewSet, AssignmentQuestionViewSet, SubmissionViewSet, TeacherFeedbackViewSet, JoinedClassesView, AssignmentAttachmentViewSet, NonCodingSubmissionViewSet, RunTestCasesView, EvaluateSubmissionView, CustomTokenObtainPairView, DeleteClassView, get_students_in_class, student_performance, TestCaseResultViewSet, ContactViewSet, BugReportViewSet, DatabaseSchemaViewSet, DatabaseQuestionViewSet, DatabaseSubmissionViewSet, TestDatabaseQueryView, TestDatabaseSchemaView, TestDatabaseQueryWithSchemaView, get_database_submissions_by_student, GenerateDatabaseAssignmentWithAIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .oauth_views import GoogleOAuthView, GitHubOAuthView
 from .otp_views import SendOTPView, VerifyOTPView, ResetPasswordView
@@ -13,9 +13,13 @@ router.register(r'classstudents', ClassStudentViewSet)
 router.register(r'programminglanguages', ProgrammingLanguageViewSet)
 router.register(r'assignments', AssignmentViewSet)
 router.register(r'assignmentquestions', AssignmentQuestionViewSet)
+router.register(r'questions', CodingQuestionViewSet)
 router.register(r'testcases', TestCaseViewSet)
+router.register(r'codingtestcases', CodingTestCaseViewSet)
+router.register(r'noncodingquestions', NonCodingQuestionViewSet)
 router.register(r'testcaseresults', TestCaseResultViewSet)
 router.register(r'contact', ContactViewSet)
+router.register(r'bugreports', BugReportViewSet)
 router.register(r'assignmentattachments', AssignmentAttachmentViewSet)
 router.register(r'submissions', SubmissionViewSet)
 router.register(r'noncodingsubmissions', NonCodingSubmissionViewSet)
