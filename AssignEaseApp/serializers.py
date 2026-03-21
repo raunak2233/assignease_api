@@ -165,11 +165,23 @@ class ClassStudentSerializer(serializers.ModelSerializer):
         fields = ['id', 'student', 'class_assigned', 'class_name', 'student_name', 'username', 'email', 'enrollment_number']
 
     def validate(self, data):
+        request = self.context.get('request')
         student = data.get('student')
+        if request and request.user.is_authenticated and hasattr(request.user, 'profile'):
+            if request.user.profile.role == 'student':
+                student = request.user
+                data['student'] = request.user
         class_assigned = data.get('class_assigned')
         if ClassStudent.objects.filter(student=student, class_assigned=class_assigned).exists():
             raise serializers.ValidationError("This student is already assigned to this class.")
         return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and hasattr(request.user, 'profile'):
+            if request.user.profile.role == 'student':
+                validated_data['student'] = request.user
+        return super().create(validated_data)
 
 
 class ClassStudentDetailSerializer(serializers.ModelSerializer):
@@ -532,8 +544,8 @@ class SubmissionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
         files = validated_data.pop('files', None)
-        if 'student' not in validated_data:
-            validated_data['student'] = request.user if request else None
+        if request and request.user.is_authenticated:
+            validated_data['student'] = request.user
 
         # Create submission record
         submission = Submission.objects.create(**validated_data)
@@ -556,8 +568,7 @@ class TeacherFeedbackSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
     def create(self, validated_data):
-        if 'teacher' not in validated_data:
-            validated_data['teacher'] = self.context['request'].user
+        validated_data['teacher'] = self.context['request'].user
         return super().create(validated_data)
 
 class AssignmentAttachmentSerializer(serializers.ModelSerializer):
@@ -679,8 +690,8 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
         files = validated_data.pop('files', None)
-        if 'student' not in validated_data or validated_data.get('student') is None:
-            validated_data['student'] = request.user if request else None
+        if request and request.user.is_authenticated:
+            validated_data['student'] = request.user
 
         # Create non-coding submission
         submission = NonCodingSubmission.objects.create(**validated_data)
