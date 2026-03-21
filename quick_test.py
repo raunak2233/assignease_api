@@ -7,7 +7,7 @@ Run: python quick_test.py
 import requests
 import json
 
-BASE_URL = "https://api.assignease.io/api"
+BASE_URL = "http://127.0.0.1:8000/api"
 
 def print_section(title):
     print(f"\n{'='*60}")

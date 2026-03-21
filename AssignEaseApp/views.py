@@ -18,6 +18,20 @@ from .piston_service import PistonService
 from .models import AssignmentQuestion, TestCase, TestCaseResult
 from .database_service import DatabaseService
 
+def teacher_owned_filter(user, prefix=""):
+    base = f"{prefix}__" if prefix else ""
+    return Q(**{f"{base}teacher": user}) | Q(**{f"{base}class_assigned__teacher": user})
+
+
+def teacher_owns_assignment(user, assignment):
+    if not assignment:
+        return False
+    if assignment.teacher_id == user.id:
+        return True
+    class_assigned = getattr(assignment, "class_assigned", None)
+    return bool(class_assigned and class_assigned.teacher_id == user.id)
+
+
 @api_view(['GET'])
 def get_student_assignments(request, student_id):
     try:
@@ -440,6 +454,27 @@ class AssignmentViewSet(viewsets.ModelViewSet):
     serializer_class = AssignmentSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = None
+
+        queryset = Assignment.objects.all()
+        if profile and profile.role == 'teacher':
+            return queryset.filter(teacher_owned_filter(user)).distinct()
+        if profile and profile.role == 'student':
+            student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
+            return queryset.filter(class_assigned__in=student_classes)
+        return queryset.none()
+
+    def perform_create(self, serializer):
+        serializer.save(teacher=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(teacher=self.request.user)
+
 class AssignmentQuestionViewSet(viewsets.ModelViewSet):
     queryset = AssignmentQuestion.objects.all()
     serializer_class = AssignmentQuestionSerializer
@@ -459,7 +494,9 @@ class SubmissionViewSet(viewsets.ModelViewSet):
 
         if profile.role == 'teacher':
             # Fetch only submissions for assignments created by this teacher
-            queryset = queryset.filter(assignment__teacher=user)
+            queryset = queryset.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             # If the user is a student (check the profile's role)
             queryset = queryset.filter(student=user)
@@ -567,7 +604,9 @@ class NonCodingSubmissionViewSet(viewsets.ModelViewSet):
         # Filter by role
         if profile and profile.role == 'teacher':
             # teachers see all non-coding submissions for their assignments
-            queryset = queryset.filter(assignment__teacher=user)
+            queryset = queryset.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             # students see their own
             queryset = queryset.filter(student=user)
@@ -604,7 +643,7 @@ class NonCodingSubmissionViewSet(viewsets.ModelViewSet):
         # Check permissions
         if profile.role == 'teacher':
             # Teachers can update submissions for their assignments
-            if instance.assignment.teacher != user:
+            if not teacher_owns_assignment(user, instance.assignment):
                 return Response(
                     {"error": "You can only update submissions for your assignments"}, 
                     status=status.HTTP_403_FORBIDDEN
@@ -659,7 +698,7 @@ class NonCodingSubmissionViewSet(viewsets.ModelViewSet):
         # Find the submission for this assignment
         if profile.role == 'teacher':
             # Teachers can update submissions for their assignments
-            if assignment.teacher != user:
+            if not teacher_owns_assignment(user, assignment):
                 return Response(
                     {"error": "You can only update submissions for your assignments"}, 
                     status=status.HTTP_403_FORBIDDEN
@@ -725,7 +764,9 @@ class TestCaseViewSet(viewsets.ModelViewSet):
 
         # Teachers: return testcases for questions in assignments they own
         if profile and profile.role == 'teacher':
-            return TestCase.objects.filter(question__assignment__teacher=user)
+            return TestCase.objects.filter(
+                teacher_owned_filter(user, "question__assignment")
+            ).distinct()
         # Students: no access to create/modify testcases; allow read-only on testcases for questions in their classes' assignments
         # Return testcases only for assignments assigned to student's classes
         return TestCase.objects.filter(question__assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
@@ -747,7 +788,9 @@ class CodingQuestionViewSet(viewsets.ModelViewSet):
 
         # Teachers: return coding questions for assignments they own
         if profile and profile.role == 'teacher':
-            return CodingQuestion.objects.filter(assignment__teacher=user)
+            return CodingQuestion.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         # Students: return coding questions for assignments in their classes
         return CodingQuestion.objects.filter(assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
 
@@ -768,7 +811,9 @@ class CodingTestCaseViewSet(viewsets.ModelViewSet):
 
         # Teachers: return test cases for questions in assignments they own
         if profile and profile.role == 'teacher':
-            return CodingTestCase.objects.filter(question__assignment__teacher=user)
+            return CodingTestCase.objects.filter(
+                teacher_owned_filter(user, "question__assignment")
+            ).distinct()
         # Students: no access to create/modify test cases; allow read-only for assignments in their classes
         return CodingTestCase.objects.filter(question__assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
 
@@ -789,7 +834,9 @@ class NonCodingQuestionViewSet(viewsets.ModelViewSet):
 
         # Teachers: return non-coding questions for assignments they own
         if profile and profile.role == 'teacher':
-            return NonCodingQuestion.objects.filter(assignment__teacher=user)
+            return NonCodingQuestion.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         # Students: return non-coding questions for assignments in their classes
         return NonCodingQuestion.objects.filter(assignment__class_assigned__in=ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True))
 
@@ -973,7 +1020,9 @@ class TestCaseResultViewSet(viewsets.ModelViewSet):
 
         # Teachers: see results for submissions of assignments they own
         if profile and profile.role == 'teacher':
-            return TestCaseResult.objects.filter(submission__assignment__teacher=user)
+            return TestCaseResult.objects.filter(
+                teacher_owned_filter(user, "submission__assignment")
+            ).distinct()
         # Students: see only their own submission results
         return TestCaseResult.objects.filter(submission__student=user)
 
@@ -989,7 +1038,9 @@ class AIEvaluationListView(APIView):
             return Response({"error": "User profile not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         if profile.role == 'teacher':
-            qs = AIEvaluation.objects.filter(assignment__teacher=user)
+            qs = AIEvaluation.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             qs = AIEvaluation.objects.filter(student=user)
 
@@ -1013,7 +1064,7 @@ class AIEvaluationDetailView(APIView):
             return Response({"error": "User profile not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         if profile.role == 'teacher':
-            if ai.assignment.teacher != user:
+            if not teacher_owns_assignment(user, ai.assignment):
                 return Response({"error": "You do not have permission to view this resource"}, status=status.HTTP_403_FORBIDDEN)
         else:
             if ai.student != user:
@@ -1060,7 +1111,9 @@ class DatabaseSchemaViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.profile.role == 'teacher':
             # Teachers can only see schemas for their assignments
-            return DatabaseSchema.objects.filter(assignment__teacher=user)
+            return DatabaseSchema.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             # Students can see schemas for assignments in their classes
             student_classes = ClassStudent.objects.filter(student=user).values_list('class_assigned', flat=True)
@@ -1080,7 +1133,9 @@ class DatabaseQuestionViewSet(viewsets.ModelViewSet):
         assignment_id = self.request.query_params.get("assignment")
 
         if user.profile.role == 'teacher':
-            qs = DatabaseQuestion.objects.filter(assignment__teacher=user)
+            qs = DatabaseQuestion.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             student_classes = ClassStudent.objects.filter(
                 student=user
@@ -1106,7 +1161,9 @@ class DatabaseSubmissionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.profile.role == 'teacher':
             # Teachers can see all submissions for their assignments
-            return DatabaseSubmission.objects.filter(assignment__teacher=user)
+            return DatabaseSubmission.objects.filter(
+                teacher_owned_filter(user, "assignment")
+            ).distinct()
         else:
             # Students can only see their own submissions
             return DatabaseSubmission.objects.filter(student=user)

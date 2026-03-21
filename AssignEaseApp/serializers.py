@@ -142,12 +142,15 @@ class ClassSerializer(serializers.ModelSerializer):
     class Meta:
         model = Class
         fields = ['id', 'class_name', 'teacher', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['teacher', 'created_at', 'updated_at']
 
     def create(self, validated_data):
-        if 'teacher' not in validated_data:
-            validated_data['teacher'] = self.context['request'].user
+        validated_data['teacher'] = self.context['request'].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data['teacher'] = self.context['request'].user
+        return super().update(instance, validated_data)
 
 class ClassStudentSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source="student.profile.name", read_only=True)
@@ -315,6 +318,31 @@ class AssignmentSerializer(serializers.ModelSerializer):
             'submission_type','submission_type_display',
             'is_submitted','attachments'
         ]
+        read_only_fields = ['teacher']
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        class_assigned = attrs.get('class_assigned') or getattr(self.instance, 'class_assigned', None)
+
+        if request and class_assigned and hasattr(request.user, 'profile'):
+            if request.user.profile.role == 'teacher' and class_assigned.teacher_id != request.user.id:
+                raise serializers.ValidationError({
+                    'class_assigned': 'You can only create assignments for your own classes.'
+                })
+
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['teacher'] = request.user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['teacher'] = request.user
+        return super().update(instance, validated_data)
 
     def _get_submission_question_id(self, assignment, title, total_marks):
         mirror_question, _ = AssignmentQuestion.objects.get_or_create(
