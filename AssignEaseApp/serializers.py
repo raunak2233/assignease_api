@@ -450,13 +450,20 @@ class AssignmentSerializer(serializers.ModelSerializer):
         student_id = self.context.get('student_id', None)
         if not student_id:
             return False  
-        
-        # Check for any type of submission: coding, non-coding, or database
-        coding_submitted = Submission.objects.filter(assignment=obj, student_id=student_id).exists()
-        non_coding_submitted = NonCodingSubmission.objects.filter(assignment=obj, student_id=student_id).exists()
-        database_submitted = DatabaseSubmission.objects.filter(assignment=obj, student_id=student_id).exists()
-        
-        return coding_submitted or non_coding_submitted or database_submitted
+
+        coding_qs = Submission.objects.filter(assignment=obj, student_id=student_id)
+        non_coding_qs = NonCodingSubmission.objects.filter(assignment=obj, student_id=student_id)
+        database_qs = DatabaseSubmission.objects.filter(assignment=obj, student_id=student_id)
+
+        has_reassigned = (
+            coding_qs.filter(status='reassigned').exists() or
+            non_coding_qs.filter(status='reassigned').exists() or
+            database_qs.filter(status='reassigned').exists()
+        )
+        if has_reassigned:
+            return False
+
+        return coding_qs.exists() or non_coding_qs.exists() or database_qs.exists()
     
     def get_attachments(self, obj):
         request = self.context.get('request')
@@ -501,6 +508,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             'testcase_results', 'auto_marks', 'custom_marks', 'total_testcases', 'passed_testcases'
         ]
         read_only_fields = ['submitted_at', 'updated_at', 'auto_marks', 'total_testcases', 'passed_testcases']
+        validators = []
 
     def get_files_info(self, obj):
         request = self.context.get('request')
@@ -547,10 +555,22 @@ class SubmissionSerializer(serializers.ModelSerializer):
         if request and request.user.is_authenticated:
             validated_data['student'] = request.user
 
-        # Create submission record
-        submission = Submission.objects.create(**validated_data)
+        submission, created = Submission.objects.update_or_create(
+            student=validated_data['student'],
+            assignment=validated_data['assignment'],
+            question=validated_data['question'],
+            defaults={
+                **validated_data,
+                'auto_marks': 0.0,
+                'custom_marks': None,
+                'total_testcases': 0,
+                'passed_testcases': 0,
+            },
+        )
 
-        # Handle uploaded files (if any)
+        if not created:
+            submission.files.all().delete()
+
         if files:
             for f in files:
                 SubmissionFile.objects.create(submission=submission, file=f)
@@ -625,6 +645,7 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
         model = NonCodingSubmission
         fields = ['id', 'assignment', 'assignment_title', 'assignment_type', 'assignment_type_display', 'student', 'student_info', 'text_submission', 'files', 'files_info', 'status', 'feedback', 'submitted_at', 'updated_at']
         read_only_fields = ['submitted_at', 'updated_at']
+        validators = []
 
     def validate(self, data):
         assignment = data.get('assignment')
@@ -693,10 +714,15 @@ class NonCodingSubmissionSerializer(serializers.ModelSerializer):
         if request and request.user.is_authenticated:
             validated_data['student'] = request.user
 
-        # Create non-coding submission
-        submission = NonCodingSubmission.objects.create(**validated_data)
+        submission, created = NonCodingSubmission.objects.update_or_create(
+            student=validated_data['student'],
+            assignment=validated_data['assignment'],
+            defaults=validated_data,
+        )
 
-        # Attach files if any
+        if not created:
+            submission.files.all().delete()
+
         if files:
             for f in files:
                 NonCodingSubmissionFile.objects.create(submission=submission, file=f)
